@@ -2,6 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.router import api_router
+from app.db.base import Base
+from app.db.session import engine
+# Importamos los modelos para que SQLAlchemy los reconozca al crear las tablas
+from app.models import property, user 
+
+# Crear las tablas al iniciar (solo para desarrollo)
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Inmo AI SaaS API",

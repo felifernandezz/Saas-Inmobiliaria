@@ -5,6 +5,7 @@ from app.models.property import Property
 from app.models.user import User
 from app.schemas.property import PropertyCreate, PropertyResponse
 from app.services.ai_generator import generate_property_listing
+from typing import List
 
 router = APIRouter()
 
@@ -15,6 +16,22 @@ def get_db():
         yield db
     finally:
         db.close()
+
+@router.get("/", response_model=List[PropertyResponse])
+def read_properties(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db)
+):
+    # Traemos las propiedades del usuario (hardcodeado ID 1 por ahora)
+    # Ordenadas por ID descendente (las nuevas primero)
+    properties = db.query(Property)\
+        .filter(Property.owner_id == 1)\
+        .order_by(Property.id.desc())\
+        .offset(skip)\
+        .limit(limit)\
+        .all()
+    return properties        
 
 @router.post("/generate", response_model=PropertyResponse)
 def create_property_and_generate(
@@ -32,6 +49,7 @@ def create_property_and_generate(
     db_property = Property(
         address=prop.address,
         features=prop.features, # En el futuro guardaremos el JSON
+        vibe=prop.vibe,
         generated_content=ai_content,
         owner_id=1 # HARDCODED TEMPORALMENTE (hasta que hagamos el login)
     )
