@@ -6,11 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Loader2, Copy, Check, Sparkles, History, PlusCircle } from "lucide-react";
+import { Loader2, Copy, Check, Sparkles, History, PlusCircle, LogOut } from "lucide-react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
+import { useRouter } from "next/navigation"; // <--- 1. Importar esto
 
-// Definimos el tipo de dato que viene del backend
 interface Property {
   id: number;
   address: string;
@@ -20,11 +20,10 @@ interface Property {
 }
 
 export default function Dashboard() {
+  const router = useRouter(); // <--- 2. Inicializar router
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  
-  // Estado para el historial
   const [history, setHistory] = useState<Property[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -34,30 +33,53 @@ export default function Dashboard() {
     vibe: "",
   });
 
-  // 1. Cargar historial al iniciar
+  // 3. Función auxiliar para obtener headers con el token
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem("token");
+    return {
+      headers: { Authorization: `Bearer ${token}` }
+    };
+  };
+
   useEffect(() => {
-    fetchHistory();
+    // 4. Verificar si hay token al entrar
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/login");
+    } else {
+      fetchHistory();
+    }
   }, []);
 
   const fetchHistory = async () => {
     try {
-      const res = await axios.get("http://127.0.0.1:8000/api/v1/properties/");
+      // Usamos getAuthHeaders() en la petición
+      const res = await axios.get("http://127.0.0.1:8000/api/v1/properties/", getAuthHeaders());
       setHistory(res.data);
     } catch (error) {
       console.error("Error cargando historial:", error);
+      // Si el token expiró o es inválido, lo borramos y mandamos al login
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        localStorage.removeItem("token");
+        router.push("/login");
+      }
     }
+  };
+
+  const logout = () => {
+    localStorage.removeItem("token");
+    router.push("/login");
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // Cargar una propiedad del historial en el formulario
   const loadProperty = (prop: Property) => {
     setFormData({
       address: prop.address,
       features: prop.features,
-      vibe: prop.vibe || "", // Manejar nulls antiguos
+      vibe: prop.vibe || "",
     });
     setResult(prop.generated_content);
     setSelectedId(prop.id);
@@ -75,22 +97,31 @@ export default function Dashboard() {
     setResult(null);
 
     try {
-      const response = await axios.post("http://127.0.0.1:8000/api/v1/properties/generate", {
-        address: formData.address,
-        features: formData.features,
-        vibe: formData.vibe,
-      });
+      // Usamos getAuthHeaders() también aquí
+      const response = await axios.post(
+        "http://127.0.0.1:8000/api/v1/properties/generate", 
+        {
+          address: formData.address,
+          features: formData.features,
+          vibe: formData.vibe,
+        },
+        getAuthHeaders()
+      );
       
       const newProp = response.data;
       setResult(newProp.generated_content);
       setSelectedId(newProp.id);
       
-      // Actualizamos el historial automáticamente
       setHistory([newProp, ...history]);
       
     } catch (error) {
       console.error("Error:", error);
-      alert("Error al conectar con el servidor.");
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        alert("Tu sesión expiró. Por favor ingresa de nuevo.");
+        router.push("/login");
+      } else {
+        alert("Error al conectar con el servidor.");
+      }
     } finally {
       setLoading(false);
     }
@@ -107,7 +138,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans">
       
-      {/* SIDEBAR - HISTORIAL */}
+      {/* SIDEBAR */}
       <aside className="w-80 bg-white border-r border-slate-200 hidden lg:flex flex-col h-screen sticky top-0">
         <div className="p-6 border-b border-slate-100">
           <div className="flex items-center space-x-2 text-blue-700 mb-6">
@@ -122,7 +153,7 @@ export default function Dashboard() {
         
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">
-            Historial Reciente
+            Historial
           </h3>
           {history.map((item) => (
             <button
@@ -136,10 +167,18 @@ export default function Dashboard() {
             >
               <div className="font-medium truncate">{item.address}</div>
               <div className="text-xs text-slate-400 truncate mt-1">
-                {item.vibe || "Sin estilo definido"}
+                {item.vibe || "General"}
               </div>
             </button>
           ))}
+        </div>
+
+        {/* Botón de Logout */}
+        <div className="p-4 border-t border-slate-100">
+          <Button onClick={logout} variant="ghost" className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50">
+            <LogOut className="mr-2 h-4 w-4" />
+            Cerrar Sesión
+          </Button>
         </div>
       </aside>
 
@@ -147,11 +186,10 @@ export default function Dashboard() {
       <main className="flex-1 p-6 md:p-12 overflow-y-auto">
         <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
           
-          {/* FORMULARIO */}
           <div className="space-y-6">
-            <div className="lg:hidden mb-6">
-              {/* Header móvil simplificado */}
+            <div className="lg:hidden mb-6 flex justify-between items-center">
               <h1 className="text-2xl font-bold text-slate-900">InmoAI Generator</h1>
+              <Button onClick={logout} size="sm" variant="ghost">Salir</Button>
             </div>
 
             <Card className="border-slate-200 shadow-sm">
@@ -205,7 +243,6 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* RESULTADO */}
           <div className="space-y-6">
             {result ? (
               <Card className="border-blue-200 bg-white shadow-lg h-[600px] flex flex-col">
@@ -228,7 +265,7 @@ export default function Dashboard() {
             ) : (
               <div className="h-[400px] lg:h-[600px] border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-400 bg-slate-50/50">
                 <History className="h-10 w-10 mb-3 opacity-20" />
-                <p>Selecciona una propiedad del historial o crea una nueva.</p>
+                <p>Selecciona una propiedad o crea una nueva.</p>
               </div>
             )}
           </div>
