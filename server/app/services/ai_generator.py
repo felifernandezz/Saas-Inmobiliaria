@@ -1,47 +1,41 @@
-import google.generativeai as genai
+from google import genai
 from app.core.config import settings
-
-# Configuramos la API una sola vez
-if settings.GOOGLE_API_KEY:
-    genai.configure(api_key=settings.GOOGLE_API_KEY)
 
 def generate_property_listing(features: str, vibe: str, address: str) -> str:
     """
-    Genera un texto de venta inmobiliaria usando Gemini.
+    Genera un texto de venta inmobiliaria usando el SDK moderno de Google Gen AI.
     """
     if not settings.GOOGLE_API_KEY:
-        return "ERROR: Google API Key no configurada. Revisa tu .env"
+        return "ERROR: Google API Key no configurada en el .env"
 
-    # Lista de modelos a probar (del más económico/estable al más nuevo)
-    candidate_models = ['gemini-1.5-flash', 'gemini-pro', 'gemini-2.0-flash-exp', 'gemini-2.0-flash']
+    try:
+        # 1. Inicializamos el cliente
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        
+        prompt = f"""
+        Actúa como un copywriter inmobiliario experto de Argentina.
+        
+        Objeto: Vender esta propiedad.
+        - Ubicación: {address}
+        - Características: {features}
+        - Vibe: {vibe}
+        
+        Salida: 
+        - Un Título con emojis.
+        - Descripción para Portales (Zonaprop).
+        - Copy para Instagram (con hashtags).
+        """
 
-    prompt = f"""
-    Actúa como un copywriter inmobiliario experto de Argentina.
-    
-    Objeto: Vender esta propiedad.
-    - Ubicación: {address}
-    - Características: {features}
-    - Vibe: {vibe}
-    
-    Salida: Título con emojis, Descripción para Portales, Copy para Instagram.
-    """
+        # 2. SELECCIÓN SEGURA: Usamos el alias 'gemini-flash-latest'
+        # Este apareció en tu lista de diagnóstico y suele ser el "Free Tier" real.
+        response = client.models.generate_content(
+            model='gemini-flash-latest', 
+            contents=prompt
+        )
+        
+        return response.text
 
-    for model_name in candidate_models:
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            print(f"Fallo con {model_name}: {str(e)}")
-            continue
-
-    # Si todo falla, devolvemos un mock para no trabar el desarrollo
-    return """
-    ⚠️ No se pudo generar el contenido con la IA (Error de Cuota o Modelo no encontrado).
-    
-    Título: ¡Oportunidad en {address}! 🏡
-    
-    Descripción: Esta propiedad cuenta con {features}. Es ideal para quienes buscan un estilo {vibe}. contáctanos para más info.
-    
-    (Este es un texto generado automáticamente por el sistema de fallback debido a errores en la API de Gemini).
-    """
+    except Exception as e:
+        # Si este también falla, es probable que la API Key necesite un proyecto nuevo 
+        # en Google Cloud Console desde cero, pero probemos este alias primero.
+        return f"⚠️ Error de IA: {str(e)}"
