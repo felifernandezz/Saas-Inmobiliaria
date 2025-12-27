@@ -1,42 +1,35 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from app.db.session import SessionLocal
+from app.api.v1 import deps
 from app.models.property import Property
 from app.models.user import User
 from app.schemas.property import PropertyCreate, PropertyResponse
 from app.services.ai_generator import generate_property_listing
-from typing import List
 
 router = APIRouter()
-
-# Dependencia para obtener la BD
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.get("/", response_model=List[PropertyResponse])
 def read_properties(
     skip: int = 0, 
     limit: int = 100, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user) # <--- PROTEGIDO
 ):
-    # Traemos las propiedades del usuario (hardcodeado ID 1 por ahora)
-    # Ordenadas por ID descendente (las nuevas primero)
+    # Solo traemos las propiedades DEL USUARIO ACTUAL
     properties = db.query(Property)\
-        .filter(Property.owner_id == 1)\
+        .filter(Property.owner_id == current_user.id)\
         .order_by(Property.id.desc())\
         .offset(skip)\
         .limit(limit)\
         .all()
-    return properties        
+    return properties
 
 @router.post("/generate", response_model=PropertyResponse)
 def create_property_and_generate(
     prop: PropertyCreate, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user) # <--- PROTEGIDO
 ):
     # 1. Llamar a Gemini
     ai_content = generate_property_listing(
@@ -45,25 +38,17 @@ def create_property_and_generate(
         address=prop.address
     )
     
-    # 2. Guardar en Base de Datos (Simulamos un owner_id=1 temporalmente)
+    # 2. Guardar usando el ID del usuario logueado
     db_property = Property(
         address=prop.address,
-        features=prop.features, # En el futuro guardaremos el JSON
+        features=prop.features,
         vibe=prop.vibe,
         generated_content=ai_content,
-        owner_id=1 # HARDCODED TEMPORALMENTE (hasta que hagamos el login)
+        owner_id=current_user.id # <--- ID REAL
     )
     
     db.add(db_property)
     db.commit()
     db.refresh(db_property)
     
-    # Devolvemos el esquema Pydantic explícitamente porque 'vibe' no está en la BD
-    return PropertyResponse(
-        id=db_property.id,
-        address=db_property.address,
-        features=db_property.features,
-        vibe=prop.vibe, 
-        generated_content=db_property.generated_content,
-        owner_id=db_property.owner_id
-    )
+    return db_property
