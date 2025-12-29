@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { FileText } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 
 
@@ -49,7 +50,7 @@ export default function Dashboard() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<string | null>(null);
-    const [copied, setCopied] = useState(false);
+    // const [copied, setCopied] = useState(false); // Eliminado estado global de copiado
     const [history, setHistory] = useState<Property[]>([]);
     const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -197,12 +198,36 @@ export default function Dashboard() {
         }
     };
 
-    const copyToClipboard = () => {
-        if (result) {
-            navigator.clipboard.writeText(result);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        }
+    // Función helper para copiar texto
+    const copyToClipboard = (text: string, label: string) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        // Podríamos mostrar un toast aquí, pero por ahora un alert simple o nada
+        // alert(`${label} copiado al portapapeles`);
+    };
+
+    // Componente pequeño para el botón de copiar
+    const CopyBtn = ({ text, label }: { text: string, label?: string }) => {
+        const [isCopied, setIsCopied] = useState(false);
+
+        const handleCopy = () => {
+            navigator.clipboard.writeText(text);
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
+        };
+
+        return (
+            <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCopy}
+                className="h-6 px-2 text-xs text-slate-400 hover:text-blue-600"
+                title="Copiar"
+            >
+                {isCopied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                {label || (isCopied ? "Copiado" : "Copiar")}
+            </Button>
+        );
     };
 
     return (
@@ -371,18 +396,8 @@ export default function Dashboard() {
                                     <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">Resultado IA</span>
 
                                     <div className="flex gap-2">
-
-
-                                        {/* Botón existente de Copiar */}
-                                        <Button
-                                            variant={copied ? "default" : "ghost"}
-                                            size="sm"
-                                            onClick={copyToClipboard}
-                                            className={copied ? "bg-green-600" : "text-slate-500"}
-                                        >
-                                            {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
-                                            {copied ? "Copiado" : "Copiar"}
-                                        </Button>
+                                        {/* Botón existente de Copiar Todo (Opcional, lo dejamos por si acaso) */}
+                                        <CopyBtn text={result || ""} label="Copiar JSON" />
                                     </div>
                                 </div>
 
@@ -391,21 +406,83 @@ export default function Dashboard() {
                                         {result && (() => {
                                             const data = cleanAIResponse(result);
                                             return (
-                                                <>
-                                                    <h2 className="text-xl font-bold mb-2">{data.title}</h2>
-                                                    <div className="flex gap-2 mb-4 flex-wrap">
-                                                        {data.highlights?.map((h: string, i: number) => (
-                                                            <span key={i} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">{h}</span>
-                                                        ))}
-                                                    </div>
-                                                    <p className="font-medium text-slate-600 mb-4">{data.short_description}</p>
-                                                    <div className="whitespace-pre-wrap">{data.full_description}</div>
+                                                <Tabs defaultValue="portals" className="w-full">
+                                                    <TabsList className="grid w-full grid-cols-3 mb-4">
+                                                        <TabsTrigger value="portals">Portales 🏠</TabsTrigger>
+                                                        <TabsTrigger value="social">Redes 📸</TabsTrigger>
+                                                        <TabsTrigger value="summary">Resumen 🌐</TabsTrigger>
+                                                    </TabsList>
 
-                                                    <div className="mt-8 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                                        <h4 className="font-bold text-sm text-slate-500 uppercase mb-2">Instagram Copy</h4>
-                                                        <p className="text-slate-600 italic">{data.instagram_copy}</p>
-                                                    </div>
-                                                </>
+                                                    {/* TAB PORTALES */}
+                                                    <TabsContent value="portals" className="space-y-4">
+                                                        <div>
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <h3 className="text-sm font-bold text-slate-700">Título</h3>
+                                                                <CopyBtn text={data.title} />
+                                                            </div>
+                                                            <div className="p-3 bg-slate-50 rounded-md border text-slate-800">
+                                                                {data.title}
+                                                            </div>
+                                                        </div>
+
+                                                        <div>
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <h3 className="text-sm font-bold text-slate-700">Descripción Completa</h3>
+                                                                <CopyBtn text={data.full_description} />
+                                                            </div>
+                                                            <div className="p-3 bg-slate-50 rounded-md border text-slate-600 whitespace-pre-wrap max-h-60 overflow-y-auto">
+                                                                {data.full_description}
+                                                            </div>
+                                                        </div>
+
+                                                        <div>
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <h3 className="text-sm font-bold text-slate-700">Highlights</h3>
+                                                                <CopyBtn text={data.highlights?.join("\n- ")} label="Copiar lista" />
+                                                            </div>
+                                                            <div className="flex gap-2 flex-wrap">
+                                                                {data.highlights?.map((h: string, i: number) => (
+                                                                    <span key={i} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">{h}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </TabsContent>
+
+                                                    {/* TAB REDES */}
+                                                    <TabsContent value="social" className="space-y-4">
+                                                        <div>
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <h3 className="text-sm font-bold text-slate-700">Instagram Copy</h3>
+                                                                <CopyBtn text={data.instagram_copy} label="Copiar Caption" />
+                                                            </div>
+                                                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 italic text-slate-600 whitespace-pre-wrap">
+                                                                {data.instagram_copy}
+                                                            </div>
+                                                        </div>
+                                                    </TabsContent>
+
+                                                    {/* TAB RESUMEN */}
+                                                    <TabsContent value="summary" className="space-y-4">
+                                                        <div>
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <h3 className="text-sm font-bold text-slate-700">Bajada Corta</h3>
+                                                                <CopyBtn text={data.short_description} />
+                                                            </div>
+                                                            <p className="font-medium text-slate-600 p-3 bg-slate-50 rounded-md border">
+                                                                {data.short_description}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <h3 className="text-sm font-bold text-slate-700">Título</h3>
+                                                                <CopyBtn text={data.title} />
+                                                            </div>
+                                                            <div className="p-3 bg-slate-50 rounded-md border text-slate-800">
+                                                                {data.title}
+                                                            </div>
+                                                        </div>
+                                                    </TabsContent>
+                                                </Tabs>
                                             );
                                         })()}
                                     </div>
