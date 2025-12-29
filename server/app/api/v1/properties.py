@@ -6,6 +6,12 @@ from app.models.property import Property
 from app.models.user import User
 from app.schemas.property import PropertyCreate, PropertyResponse
 from app.services.ai_generator import generate_property_listing
+from app.services.video_generator import create_real_estate_video
+from fastapi.responses import FileResponse
+from fastapi import BackgroundTasks
+import os
+import shutil
+import uuid
 
 router = APIRouter()
 
@@ -64,3 +70,57 @@ async def create_property_and_generate(
     db.refresh(db_property)
     
     return db_property
+
+@router.post("/generate-video")
+async def generate_video_endpoint(
+    background_tasks: BackgroundTasks,
+    text_info: str = Form(""),
+    images: List[UploadFile] = File(...),
+    current_user: User = Depends(deps.get_current_user)
+):
+    # Crear directorio temporal único para este request
+    request_id = str(uuid.uuid4())
+    temp_dir = f"temp_{request_id}"
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    saved_paths = []
+    
+    try:
+        # Guardar imágenes
+        for img in images:
+            file_path = os.path.join(temp_dir, img.filename)
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(img.file, buffer)
+            saved_paths.append(file_path)
+            
+        # Generar video
+        output_filename = os.path.join(temp_dir, "output_video.mp4")
+        
+        # Llamar al servicio (ejecución síncrona/bloqueante por ahora, 
+        # idealmente esto iría a una cola de tareas si fuera muy pesado)
+        video_path = create_real_estate_video(
+            image_paths=saved_paths,
+            text_info=text_info,
+            output_filename=output_filename
+        )
+        
+        # Función de limpieza
+        def cleanup():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                print(f"Error cleaning up {temp_dir}: {e}")
+
+        # Añadir limpieza tras la respuesta
+        background_tasks.add_task(cleanup)
+        
+        return FileResponse(
+            video_path, 
+            media_type="video/mp4", 
+            filename=f"video_{request_id}.mp4"
+        )
+        
+    except Exception as e:
+        # En caso de error, limpiar inmediatamente
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise e

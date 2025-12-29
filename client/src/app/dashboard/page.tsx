@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Loader2, Copy, Check, Sparkles, PlusCircle, LogOut, Upload, X, ImageIcon } from "lucide-react";
+import { Loader2, Copy, Check, Sparkles, PlusCircle, LogOut, Upload, X, ImageIcon, Video, Film } from "lucide-react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import { useRouter } from "next/navigation";
@@ -58,6 +58,10 @@ export default function Dashboard() {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
+    // ESTADO PARA VIDEO
+    const [videoLoading, setVideoLoading] = useState(false);
+    const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
     const [formData, setFormData] = useState({
         address: "",
         features: "",
@@ -103,7 +107,9 @@ export default function Dashboard() {
         });
         setSelectedFiles([]);
         setPreviewUrls([]);
+        setVideoUrl(null);
     };
+
 
     const logout = () => {
         localStorage.removeItem("token");
@@ -148,6 +154,8 @@ export default function Dashboard() {
         setSelectedFiles([]);
         previewUrls.forEach(url => URL.revokeObjectURL(url));
         setPreviewUrls([]);
+        if (videoUrl) URL.revokeObjectURL(videoUrl);
+        setVideoUrl(null);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -195,6 +203,53 @@ export default function Dashboard() {
             }
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleGenerateVideo = async () => {
+        if (selectedFiles.length === 0) {
+            alert("No hay imágenes seleccionadas para el video.");
+            return;
+        }
+
+        // Obtenemos un texto base para el video (ej. el título generado o la dirección)
+        let textInfo = formData.address;
+        if (result) {
+            try {
+                const parsed = cleanAIResponse(result);
+                if (parsed.title) textInfo = parsed.title; // Usamos el título "marketinero"
+            } catch (e) { }
+        }
+
+        setVideoLoading(true);
+        setVideoUrl(null);
+
+        try {
+            const data = new FormData();
+            data.append("text_info", textInfo);
+            // Re-enviamos las imágenes seleccionadas
+            selectedFiles.forEach((file) => {
+                data.append("images", file);
+            });
+
+            const response = await axios.post(
+                "http://127.0.0.1:8000/api/v1/properties/generate-video",
+                data,
+                {
+                    ...getAuthHeaders(),
+                    responseType: 'blob' // Importante para recibir archivos binarios
+                }
+            );
+
+            // Crear URL del blob
+            const url = URL.createObjectURL(new Blob([response.data]));
+            setVideoUrl(url);
+
+        } catch (error) {
+            console.error("Error generating video:", error);
+            alert("Error generando el video. Intenta nuevamente.");
+        } finally {
+            setVideoLoading(false);
         }
     };
 
@@ -407,11 +462,13 @@ export default function Dashboard() {
                                             const data = cleanAIResponse(result);
                                             return (
                                                 <Tabs defaultValue="portals" className="w-full">
-                                                    <TabsList className="grid w-full grid-cols-3 mb-4">
+                                                    <TabsList className="grid w-full grid-cols-4 mb-4">
                                                         <TabsTrigger value="portals">Portales 🏠</TabsTrigger>
                                                         <TabsTrigger value="social">Redes 📸</TabsTrigger>
                                                         <TabsTrigger value="summary">Resumen 🌐</TabsTrigger>
+                                                        <TabsTrigger value="video">Video 🎬</TabsTrigger>
                                                     </TabsList>
+
 
                                                     {/* TAB PORTALES */}
                                                     <TabsContent value="portals" className="space-y-4">
@@ -482,6 +539,65 @@ export default function Dashboard() {
                                                             </div>
                                                         </div>
                                                     </TabsContent>
+
+                                                    {/* TAB VIDEO */}
+                                                    <TabsContent value="video" className="space-y-4">
+                                                        <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-lg min-h-[300px]">
+                                                            {videoUrl ? (
+                                                                <div className="w-full max-w-[250px] space-y-4">
+                                                                    <video
+                                                                        src={videoUrl}
+                                                                        controls
+                                                                        className="w-full rounded-lg shadow-lg aspect-[9/16] object-cover"
+                                                                        autoPlay
+                                                                        loop
+                                                                    />
+                                                                    <a
+                                                                        href={videoUrl}
+                                                                        download="propiedad_video.mp4"
+                                                                        className="flex items-center justify-center w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                                                                    >
+                                                                        <Check className="mr-2 h-4 w-4" />
+                                                                        Descargar Video
+                                                                    </a>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-center space-y-4">
+                                                                    <div className="bg-blue-50 p-4 rounded-full inline-block">
+                                                                        <Film className="h-8 w-8 text-blue-500" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <h3 className="font-medium text-slate-800">Generar Video Vertical</h3>
+                                                                        <p className="text-sm text-slate-500 max-w-xs mx-auto">
+                                                                            Crea un Reel/TikTok automático usando las fotos subidas y el contenido generado.
+                                                                        </p>
+                                                                    </div>
+                                                                    <Button
+                                                                        onClick={handleGenerateVideo}
+                                                                        disabled={videoLoading || selectedFiles.length === 0}
+                                                                        className="bg-indigo-600 hover:bg-indigo-700 w-full"
+                                                                    >
+                                                                        {videoLoading ? (
+                                                                            <>
+                                                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                                                Generando...
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <Sparkles className="mr-2 h-4 w-4" />
+                                                                                Crear Video Mágico
+                                                                            </>
+                                                                        )}
+                                                                    </Button>
+                                                                    {selectedFiles.length === 0 && (
+                                                                        <p className="text-xs text-red-500">
+                                                                            * Necesitas subir fotos primero
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </TabsContent>
                                                 </Tabs>
                                             );
                                         })()}
@@ -496,7 +612,7 @@ export default function Dashboard() {
                         )}
                     </div>
                 </div>
-            </main>
-        </div>
+            </main >
+        </div >
     );
 }
